@@ -195,6 +195,40 @@ async function batchReadObjects(objectType, ids, properties) {
 }
 
 /**
+ * Strip HTML tags and decode common entities from a string.
+ */
+function stripHtml(html) {
+  if (!html) return null;
+  return html
+    .replace(/<[^>]+>/g, " ")  // replace tags with a space to avoid word merging
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s{2,}/g, " ")   // collapse multiple spaces
+    .trim() || null;
+}
+
+/**
+ * Strip the quoted/threaded portion from an email body, keeping only the
+ * latest message (the content before the first reply separator).
+ */
+function stripEmailThread(text) {
+  if (!text) return null;
+
+  // Common separators used by email clients and HubSpot
+  const separatorPattern =
+    /(\r?\n){1,2}(On .+wrote:|From:\s|-{3,}|_{3,}|>{1})/;
+
+  const match = text.search(separatorPattern);
+  const latest = match > 0 ? text.substring(0, match) : text;
+
+  return latest.trim() || null;
+}
+
+/**
  * Build a note object { body, timestamp, ownerName } from a raw HubSpot note result.
  */
 async function buildNoteObject(raw) {
@@ -202,7 +236,7 @@ async function buildNoteObject(raw) {
   const { hs_note_body, hs_timestamp, hubspot_owner_id } = raw.properties;
   const ownerName = await getOwnerName(hubspot_owner_id);
   return {
-    body: hs_note_body || null,
+    body: stripHtml(hs_note_body) || null,
     timestamp: hs_timestamp || null,
     ownerName: ownerName || null,
   };
@@ -305,7 +339,7 @@ async function getLastEmailForObject(objectType, objectId) {
 
     return {
       subject: p.hs_email_subject || null,
-      body: p.hs_email_text || null,
+      body: stripEmailThread(p.hs_email_text) || null,
       senderName,
       senderEmail: p.hs_email_sender_email || null,
       timestamp: p.hs_timestamp || null,
