@@ -42,6 +42,11 @@ async function getTasksDueThisWeek(weekStart, weekEnd) {
               operator: "LTE",
               value: String(weekEnd),
             },
+            {
+              propertyName: "hubspot_owner_id",
+              operator: "EQ",
+              value: "1517615118",
+            },
           ],
         },
       ],
