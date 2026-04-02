@@ -149,33 +149,49 @@ async function getOwnerName(ownerId) {
 }
 
 /**
- * Search notes associated with a contact or company, sorted newest first.
- * objectType: "contacts" | "companies"
- * Returns raw HubSpot results array.
+ * Get all associated object IDs for a given record using the v4 associations API.
+ * e.g. all note IDs for a contact: getAssociatedIds("contacts", contactId, "notes")
  */
-async function searchNotes(objectType, objectId, extraFilters = []) {
+async function getAssociatedIds(fromObjectType, fromObjectId, toObjectType) {
   const client = getClient();
+  const ids = [];
+  let after = undefined;
 
-  const body = {
-    filterGroups: [
+  do {
+    const params = { limit: 500, ...(after ? { after } : {}) };
+    const { data } = await client.get(
+      `/crm/v4/objects/${fromObjectType}/${fromObjectId}/associations/${toObjectType}`,
+      { params }
+    );
+    (data.results || []).forEach((r) => ids.push(r.toObjectId));
+    after = data.paging?.next?.after;
+  } while (after);
+
+  return ids;
+}
+
+/**
+ * Batch-read CRM objects by ID, chunking into groups of 100 (HubSpot limit).
+ * Returns array of raw result objects.
+ */
+async function batchReadObjects(objectType, ids, properties) {
+  if (ids.length === 0) return [];
+  const client = getClient();
+  const results = [];
+
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { data } = await client.post(
+      `/crm/v3/objects/${objectType}/batch/read`,
       {
-        filters: [
-          {
-            propertyName: `associations.${objectType}`,
-            operator: "EQ",
-            value: String(objectId),
-          },
-          ...extraFilters,
-        ],
-      },
-    ],
-    properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id"],
-    sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
-    limit: 1,
-  };
+        inputs: chunk.map((id) => ({ id: String(id) })),
+        properties,
+      }
+    );
+    results.push(...(data.results || []));
+  }
 
-  const { data } = await client.post("/crm/v3/objects/notes/search", body);
-  return data.results || [];
+  return results;
 }
 
 /**
@@ -194,12 +210,27 @@ async function buildNoteObject(raw) {
 
 /**
  * Get the most recent note for a contact or company.
+ * Uses v4 associations API + batch read to avoid unreliable search filters.
  * Returns { body, timestamp, ownerName } or null.
  */
 async function getLastNoteForObject(objectType, objectId) {
   try {
-    const results = await searchNotes(objectType, objectId);
-    return buildNoteObject(results[0] ?? null);
+    const noteIds = await getAssociatedIds(objectType, objectId, "notes");
+    if (noteIds.length === 0) return null;
+
+    const notes = await batchReadObjects("notes", noteIds.length > 100 ? noteIds.slice(0, 100) : noteIds, [
+      "hs_note_body",
+      "hs_timestamp",
+      "hubspot_owner_id",
+    ]);
+
+    notes.sort(
+      (a, b) =>
+        new Date(b.properties.hs_timestamp) -
+        new Date(a.properties.hs_timestamp)
+    );
+
+    return buildNoteObject(notes[0] ?? null);
   } catch {
     return null;
   }
@@ -211,14 +242,27 @@ async function getLastNoteForObject(objectType, objectId) {
  */
 async function getLastEdNoteForObject(objectType, objectId) {
   try {
-    const results = await searchNotes(objectType, objectId, [
-      {
-        propertyName: "hs_note_body",
-        operator: "CONTAINS_TOKEN",
-        value: "Ed's Note",
-      },
+    const noteIds = await getAssociatedIds(objectType, objectId, "notes");
+    if (noteIds.length === 0) return null;
+
+    // Fetch all notes (up to 500) so we can search for "Ed's Note" client-side
+    const allNotes = await batchReadObjects(noteIds, "notes", [
+      "hs_note_body",
+      "hs_timestamp",
+      "hubspot_owner_id",
     ]);
-    return buildNoteObject(results[0] ?? null);
+
+    const edNotes = allNotes.filter((n) =>
+      n.properties.hs_note_body?.includes("Ed's Note")
+    );
+
+    edNotes.sort(
+      (a, b) =>
+        new Date(b.properties.hs_timestamp) -
+        new Date(a.properties.hs_timestamp)
+    );
+
+    return buildNoteObject(edNotes[0] ?? null);
   } catch {
     return null;
   }
@@ -226,44 +270,38 @@ async function getLastEdNoteForObject(objectType, objectId) {
 
 /**
  * Get the most recent logged email for a contact or company.
+ * Uses v4 associations API + batch read to avoid unreliable search filters.
  * Returns { subject, body, senderName, senderEmail, timestamp, direction } or null.
  */
 async function getLastEmailForObject(objectType, objectId) {
-  const client = getClient();
   try {
-    const body = {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: `associations.${objectType}`,
-              operator: "EQ",
-              value: String(objectId),
-            },
-          ],
-        },
-      ],
-      properties: [
-        "hs_email_subject",
-        "hs_email_text",
-        "hs_timestamp",
-        "hs_email_sender_firstname",
-        "hs_email_sender_lastname",
-        "hs_email_sender_email",
-        "hs_email_direction",
-      ],
-      sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
-      limit: 1,
-    };
+    const emailIds = await getAssociatedIds(objectType, objectId, "emails");
+    if (emailIds.length === 0) return null;
 
-    const { data } = await client.post("/crm/v3/objects/emails/search", body);
-    const raw = data.results?.[0];
+    const emails = await batchReadObjects("emails", emailIds.length > 100 ? emailIds.slice(0, 100) : emailIds, [
+      "hs_email_subject",
+      "hs_email_text",
+      "hs_timestamp",
+      "hs_email_sender_firstname",
+      "hs_email_sender_lastname",
+      "hs_email_sender_email",
+      "hs_email_direction",
+    ]);
+
+    emails.sort(
+      (a, b) =>
+        new Date(b.properties.hs_timestamp) -
+        new Date(a.properties.hs_timestamp)
+    );
+
+    const raw = emails[0];
     if (!raw) return null;
 
     const p = raw.properties;
-    const senderName = [p.hs_email_sender_firstname, p.hs_email_sender_lastname]
-      .filter(Boolean)
-      .join(" ") || null;
+    const senderName =
+      [p.hs_email_sender_firstname, p.hs_email_sender_lastname]
+        .filter(Boolean)
+        .join(" ") || null;
 
     return {
       subject: p.hs_email_subject || null,
