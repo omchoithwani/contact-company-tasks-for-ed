@@ -1,0 +1,15 @@
+{
+  "name": "contact-company-tasks-for-ed",
+  "version": "1.0.0",
+  "description": "Weekly email digest of pending HubSpot tasks associated with contacts or companies (not deals)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "resend": "^3.2.0"
+  }
+}
