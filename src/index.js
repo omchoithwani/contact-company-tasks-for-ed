@@ -9,6 +9,7 @@ const {
   getCompany,
   getLastNoteForObject,
   getLastEdNoteForObject,
+  getLastEmailForObject,
 } = require("./hubspot");
 
 const { formatEmail, sendEmail } = require("./email");
@@ -90,19 +91,26 @@ async function main() {
 
     let lastNote = null;
     let edNote = null;
+    let lastEmail = null;
 
     if (noteObjectType && noteObjectId) {
-      [lastNote, edNote] = await Promise.all([
+      [lastNote, edNote, lastEmail] = await Promise.all([
         getLastNoteForObject(noteObjectType, noteObjectId),
         getLastEdNoteForObject(noteObjectType, noteObjectId),
+        getLastEmailForObject(noteObjectType, noteObjectId),
       ]);
 
-      // If contact had no notes, try the company
-      if (!lastNote && noteObjectType === "contacts" && companyId) {
-        lastNote = await getLastNoteForObject("companies", companyId);
-      }
-      if (!edNote && noteObjectType === "contacts" && companyId) {
-        edNote = await getLastEdNoteForObject("companies", companyId);
+      // If contact had no results, fall back to company
+      if (noteObjectType === "contacts" && companyId) {
+        if (!lastNote) {
+          lastNote = await getLastNoteForObject("companies", companyId);
+        }
+        if (!edNote) {
+          edNote = await getLastEdNoteForObject("companies", companyId);
+        }
+        if (!lastEmail) {
+          lastEmail = await getLastEmailForObject("companies", companyId);
+        }
       }
     }
 
@@ -115,6 +123,7 @@ async function main() {
       company,
       lastNote,
       edNote,
+      lastEmail,
     };
   });
 
