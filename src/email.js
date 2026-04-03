@@ -161,9 +161,11 @@ function escapeHtml(str) {
 async function sendEmail(subject, html, text) {
   const resend = new Resend(process.env.RESEND_API_KEY);
 
+  const to = process.env.EMAIL_TO.split(",").map((e) => e.trim()).filter(Boolean);
+
   const { data, error } = await resend.emails.send({
     from: process.env.EMAIL_FROM,
-    to: process.env.EMAIL_TO,
+    to,
     subject,
     html,
     text,
