@@ -242,10 +242,15 @@ async function buildNoteObject(raw) {
   };
 }
 
-/** Sort an array of raw HubSpot objects newest-first by createdate. */
+/**
+ * Sort an array of raw HubSpot batch/read results newest-first.
+ * Uses the top-level `createdAt` field which is always present on every
+ * batch/read response without needing to be listed in properties.
+ * properties.createdate may be null/absent; createdAt never is.
+ */
 function sortByCreateDate(items) {
   return items.slice().sort(
-    (a, b) => new Date(b.properties.createdate) - new Date(a.properties.createdate)
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   );
 }
 
@@ -263,7 +268,6 @@ async function getLastNoteForObject(objectType, objectId) {
       "hs_note_body",
       "hs_timestamp",
       "hubspot_owner_id",
-      "createdate",
     ]);
 
     const sorted = sortByCreateDate(notes);
@@ -286,7 +290,6 @@ async function getLastEdNoteForObject(objectType, objectId) {
       "hs_note_body",
       "hs_timestamp",
       "hubspot_owner_id",
-      "createdate",
     ]);
 
     const edNotes = allNotes.filter((n) =>
@@ -318,7 +321,6 @@ async function getLastEmailForObject(objectType, objectId) {
       "hs_email_sender_lastname",
       "hs_email_sender_email",
       "hs_email_direction",
-      "createdate",
     ]);
 
     const sorted = sortByCreateDate(emails);
