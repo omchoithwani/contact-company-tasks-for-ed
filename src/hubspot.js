@@ -1,6 +1,13 @@
 const axios = require("axios");
 
-const BASE_URL = "https://api.hubapi.com";
+const DEBUG = process.env.DEBUG === "true";
+
+function dbg(label, data) {
+  if (!DEBUG) return;
+  console.log(`\n[DEBUG] ${label}`);
+  console.log(JSON.stringify(data, null, 2));
+}
+
 
 // Cache owner names to avoid repeated API calls within a single run
 const ownerCache = new Map();
@@ -262,6 +269,7 @@ function sortByCreateDate(items) {
 async function getLastNoteForObject(objectType, objectId) {
   try {
     const noteIds = await getAssociatedIds(objectType, objectId, "notes");
+    dbg(`getLastNoteForObject(${objectType}, ${objectId}) — noteIds`, noteIds);
     if (noteIds.length === 0) return null;
 
     const notes = await batchReadObjects("notes", noteIds, [
@@ -270,11 +278,25 @@ async function getLastNoteForObject(objectType, objectId) {
       "hubspot_owner_id",
     ]);
 
-    const sorted = sortByCreateDate(notes).filter(
+    const allSorted = sortByCreateDate(notes);
+    dbg(`All notes sorted by createdAt`, allSorted.map((n) => ({
+      id: n.id,
+      createdAt: n.createdAt,
+      bodySnippet: n.properties.hs_note_body?.slice(0, 80),
+      isEdNote: !!n.properties.hs_note_body?.includes("Ed's Note"),
+    })));
+
+    const filtered = allSorted.filter(
       (n) => !n.properties.hs_note_body?.includes("Ed's Note")
     );
-    return buildNoteObject(sorted[0] ?? null);
-  } catch {
+    dbg(`Picked last note`, {
+      id: filtered[0]?.id,
+      createdAt: filtered[0]?.createdAt,
+      bodySnippet: filtered[0]?.properties.hs_note_body?.slice(0, 80),
+    });
+    return buildNoteObject(filtered[0] ?? null);
+  } catch (err) {
+    dbg(`getLastNoteForObject error`, { message: err.message });
     return null;
   }
 }
@@ -299,8 +321,19 @@ async function getLastEdNoteForObject(objectType, objectId) {
     );
 
     const sorted = sortByCreateDate(edNotes);
+    dbg(`getLastEdNoteForObject(${objectType}, ${objectId}) — Ed notes sorted`, sorted.map((n) => ({
+      id: n.id,
+      createdAt: n.createdAt,
+      bodySnippet: n.properties.hs_note_body?.slice(0, 80),
+    })));
+    dbg(`Picked Ed note`, {
+      id: sorted[0]?.id,
+      createdAt: sorted[0]?.createdAt,
+      bodySnippet: sorted[0]?.properties.hs_note_body?.slice(0, 80),
+    });
     return buildNoteObject(sorted[0] ?? null);
-  } catch {
+  } catch (err) {
+    dbg(`getLastEdNoteForObject error`, { message: err.message });
     return null;
   }
 }
@@ -313,6 +346,7 @@ async function getLastEdNoteForObject(objectType, objectId) {
 async function getLastEmailForObject(objectType, objectId) {
   try {
     const emailIds = await getAssociatedIds(objectType, objectId, "emails");
+    dbg(`getLastEmailForObject(${objectType}, ${objectId}) — emailIds`, emailIds);
     if (emailIds.length === 0) return null;
 
     const emails = await batchReadObjects("emails", emailIds, [
@@ -326,6 +360,17 @@ async function getLastEmailForObject(objectType, objectId) {
     ]);
 
     const sorted = sortByCreateDate(emails);
+    dbg(`All emails sorted by createdAt`, sorted.map((e) => ({
+      id: e.id,
+      createdAt: e.createdAt,
+      subject: e.properties.hs_email_subject,
+      direction: e.properties.hs_email_direction,
+    })));
+    dbg(`Picked email`, {
+      id: sorted[0]?.id,
+      createdAt: sorted[0]?.createdAt,
+      subject: sorted[0]?.properties.hs_email_subject,
+    });
     const raw = sorted[0];
     if (!raw) return null;
 
@@ -343,7 +388,8 @@ async function getLastEmailForObject(objectType, objectId) {
       timestamp: p.hs_timestamp || null,
       direction: p.hs_email_direction || null,
     };
-  } catch {
+  } catch (err) {
+    dbg(`getLastEmailForObject error`, { message: err.message });
     return null;
   }
 }
