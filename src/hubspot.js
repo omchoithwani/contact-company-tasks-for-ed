@@ -237,9 +237,16 @@ async function buildNoteObject(raw) {
   const ownerName = await getOwnerName(hubspot_owner_id);
   return {
     body: stripHtml(hs_note_body) || null,
-    timestamp: hs_timestamp || null,
+    timestamp: hs_timestamp || null,  // engagement date, used for display
     ownerName: ownerName || null,
   };
+}
+
+/** Sort an array of raw HubSpot objects newest-first by createdate. */
+function sortByCreateDate(items) {
+  return items.slice().sort(
+    (a, b) => new Date(b.properties.createdate) - new Date(a.properties.createdate)
+  );
 }
 
 /**
@@ -252,19 +259,15 @@ async function getLastNoteForObject(objectType, objectId) {
     const noteIds = await getAssociatedIds(objectType, objectId, "notes");
     if (noteIds.length === 0) return null;
 
-    const notes = await batchReadObjects("notes", noteIds.length > 100 ? noteIds.slice(0, 100) : noteIds, [
+    const notes = await batchReadObjects("notes", noteIds, [
       "hs_note_body",
       "hs_timestamp",
       "hubspot_owner_id",
+      "createdate",
     ]);
 
-    notes.sort(
-      (a, b) =>
-        new Date(b.properties.hs_timestamp) -
-        new Date(a.properties.hs_timestamp)
-    );
-
-    return buildNoteObject(notes[0] ?? null);
+    const sorted = sortByCreateDate(notes);
+    return buildNoteObject(sorted[0] ?? null);
   } catch {
     return null;
   }
@@ -279,24 +282,19 @@ async function getLastEdNoteForObject(objectType, objectId) {
     const noteIds = await getAssociatedIds(objectType, objectId, "notes");
     if (noteIds.length === 0) return null;
 
-    // Fetch all notes (up to 500) so we can search for "Ed's Note" client-side
-    const allNotes = await batchReadObjects(noteIds, "notes", [
+    const allNotes = await batchReadObjects("notes", noteIds, [
       "hs_note_body",
       "hs_timestamp",
       "hubspot_owner_id",
+      "createdate",
     ]);
 
     const edNotes = allNotes.filter((n) =>
       n.properties.hs_note_body?.includes("Ed's Note")
     );
 
-    edNotes.sort(
-      (a, b) =>
-        new Date(b.properties.hs_timestamp) -
-        new Date(a.properties.hs_timestamp)
-    );
-
-    return buildNoteObject(edNotes[0] ?? null);
+    const sorted = sortByCreateDate(edNotes);
+    return buildNoteObject(sorted[0] ?? null);
   } catch {
     return null;
   }
@@ -312,7 +310,7 @@ async function getLastEmailForObject(objectType, objectId) {
     const emailIds = await getAssociatedIds(objectType, objectId, "emails");
     if (emailIds.length === 0) return null;
 
-    const emails = await batchReadObjects("emails", emailIds.length > 100 ? emailIds.slice(0, 100) : emailIds, [
+    const emails = await batchReadObjects("emails", emailIds, [
       "hs_email_subject",
       "hs_email_text",
       "hs_timestamp",
@@ -320,15 +318,11 @@ async function getLastEmailForObject(objectType, objectId) {
       "hs_email_sender_lastname",
       "hs_email_sender_email",
       "hs_email_direction",
+      "createdate",
     ]);
 
-    emails.sort(
-      (a, b) =>
-        new Date(b.properties.hs_timestamp) -
-        new Date(a.properties.hs_timestamp)
-    );
-
-    const raw = emails[0];
+    const sorted = sortByCreateDate(emails);
+    const raw = sorted[0];
     if (!raw) return null;
 
     const p = raw.properties;
