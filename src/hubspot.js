@@ -284,11 +284,11 @@ async function getLastNoteForObject(objectType, objectId) {
       id: n.id,
       createdAt: n.createdAt,
       bodySnippet: n.properties.hs_note_body?.slice(0, 80),
-      isEdNote: !!n.properties.hs_note_body?.includes("Ed's Note"),
+      isEdNote: !!n.properties.hs_note_body?.toLowerCase().includes("ed's note"),
     })));
 
     const filtered = allSorted.filter(
-      (n) => !n.properties.hs_note_body?.includes("Ed's Note")
+      (n) => !n.properties.hs_note_body?.toLowerCase().includes("ed's note")
     );
     dbg(`Picked last note`, {
       id: filtered[0]?.id,
@@ -318,7 +318,7 @@ async function getLastEdNoteForObject(objectType, objectId) {
     ]);
 
     const edNotes = allNotes.filter((n) =>
-      n.properties.hs_note_body?.includes("Ed's Note")
+      n.properties.hs_note_body?.toLowerCase().includes("ed's note")
     );
 
     const sorted = sortByCreateDate(edNotes);
