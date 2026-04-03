@@ -2,8 +2,8 @@ name: Weekly Contact/Company Tasks Email
 
 on:
   schedule:
-    # Every Monday at 8:00 AM EST (13:00 UTC)
-    - cron: "0 13 * * 1"
+    # Every Friday at 4:30 PM EST (21:30 UTC)
+    - cron: "30 21 * * 5"
   workflow_dispatch: # allows manual trigger from GitHub UI
 
 jobs:
