@@ -270,7 +270,9 @@ async function getLastNoteForObject(objectType, objectId) {
       "hubspot_owner_id",
     ]);
 
-    const sorted = sortByCreateDate(notes);
+    const sorted = sortByCreateDate(notes).filter(
+      (n) => !n.properties.hs_note_body?.includes("Ed's Note")
+    );
     return buildNoteObject(sorted[0] ?? null);
   } catch {
     return null;
