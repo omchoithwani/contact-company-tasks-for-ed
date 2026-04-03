@@ -1,5 +1,6 @@
 const axios = require("axios");
 
+const BASE_URL = "https://api.hubapi.com";
 const DEBUG = process.env.DEBUG === "true";
 
 function dbg(label, data) {
