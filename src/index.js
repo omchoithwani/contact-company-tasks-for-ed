@@ -8,8 +8,7 @@ const {
   getTaskAssociations,
   getContact,
   getCompany,
-  getLastNoteForObject,
-  getLastEdNoteForObject,
+  getNotesForObject,
   getLastEmailForObject,
 } = require("./hubspot");
 
@@ -19,7 +18,8 @@ const TZ = "America/New_York";
 
 // Process tasks in batches to avoid HubSpot rate limits (10 req/s on free tier).
 // Uses Promise.allSettled so one failing item doesn't abort the whole batch.
-async function batchProcess(items, batchSize, fn) {
+// Adds a short delay between batches to stay well under the rolling rate limit.
+async function batchProcess(items, batchSize, fn, delayMs = 0) {
   const results = [];
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
@@ -30,6 +30,9 @@ async function batchProcess(items, batchSize, fn) {
       } else {
         console.error("[ERROR] batchProcess item failed:", outcome.reason?.message ?? outcome.reason);
       }
+    }
+    if (delayMs > 0 && i + batchSize < items.length) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
   return results;
@@ -88,7 +91,9 @@ async function main() {
   );
 
   // 4. Enrich each qualifying task with contact, company, and notes (batched)
-  const enriched = await batchProcess(qualifying, 5, async ({ task, associations }) => {
+  // Batch size 3 + 1s delay between batches keeps us well under HubSpot's
+  // ten_secondly_rolling limit (each task makes ~5 API calls sequentially).
+  const enriched = await batchProcess(qualifying, 3, async ({ task, associations }) => {
     const contactId = associations.contacts[0] ?? null;
     const companyId = associations.companies[0] ?? null;
 
@@ -119,16 +124,22 @@ async function main() {
     let lastEmail = null;
 
     if (noteObjectType && noteObjectId) {
-      [lastNote, edNote, lastEmail] = await Promise.all([
-        getLastNoteForObject(noteObjectType, noteObjectId),
-        getLastEdNoteForObject(noteObjectType, noteObjectId),
+      // getNotesForObject fetches note IDs only ONCE and derives both lastNote + edNote
+      const [notes, email] = await Promise.all([
+        getNotesForObject(noteObjectType, noteObjectId),
         getLastEmailForObject(noteObjectType, noteObjectId),
       ]);
+      lastNote = notes.lastNote;
+      edNote = notes.edNote;
+      lastEmail = email;
 
       // If contact had no results, fall back to company
       if (noteObjectType === "contacts" && companyId) {
-        if (!lastNote) lastNote = await getLastNoteForObject("companies", companyId);
-        if (!edNote) edNote = await getLastEdNoteForObject("companies", companyId);
+        if (!lastNote || !edNote) {
+          const companyNotes = await getNotesForObject("companies", companyId);
+          if (!lastNote) lastNote = companyNotes.lastNote;
+          if (!edNote) edNote = companyNotes.edNote;
+        }
         if (!lastEmail) lastEmail = await getLastEmailForObject("companies", companyId);
       }
     }
@@ -146,7 +157,7 @@ async function main() {
       edNote,
       lastEmail,
     };
-  });
+  }, 1000);
 
   console.log(`Enriched ${enriched.length} tasks. Formatting email...`);
 

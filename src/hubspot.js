@@ -285,15 +285,15 @@ function sortByCreateDate(items) {
 }
 
 /**
- * Get the most recent note for a contact or company.
- * Uses v4 associations API + batch read to avoid unreliable search filters.
- * Returns { body, timestamp, ownerName } or null.
+ * Get the most recent regular note and the most recent Ed's Note for a contact or company.
+ * Fetches note IDs and note bodies only ONCE to avoid duplicate API calls.
+ * Returns { lastNote, edNote } where each is { body, timestamp, ownerName } or null.
  */
-async function getLastNoteForObject(objectType, objectId) {
+async function getNotesForObject(objectType, objectId) {
   try {
     const noteIds = await getAssociatedIds(objectType, objectId, "notes");
-    dbg(`getLastNoteForObject(${objectType}, ${objectId}) — noteIds`, noteIds);
-    if (noteIds.length === 0) return null;
+    dbg(`getNotesForObject(${objectType}, ${objectId}) — noteIds`, noteIds);
+    if (noteIds.length === 0) return { lastNote: null, edNote: null };
 
     const notes = await batchReadObjects("notes", noteIds, [
       "hs_note_body",
@@ -309,55 +309,33 @@ async function getLastNoteForObject(objectType, objectId) {
       isEdNote: !!n.properties.hs_note_body?.toLowerCase().includes("ed's note"),
     })));
 
-    const filtered = allSorted.filter(
+    const regularNotes = allSorted.filter(
       (n) => !n.properties.hs_note_body?.toLowerCase().includes("ed's note")
     );
-    dbg(`Picked last note`, {
-      id: filtered[0]?.id,
-      createdAt: filtered[0]?.createdAt,
-      bodySnippet: filtered[0]?.properties.hs_note_body?.slice(0, 80),
-    });
-    return buildNoteObject(filtered[0] ?? null);
-  } catch (err) {
-    console.error(`[ERROR] getLastNoteForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
-    return null;
-  }
-}
-
-/**
- * Get the most recent note containing "Ed's Note" for a contact or company.
- * Returns { body, timestamp, ownerName } or null.
- */
-async function getLastEdNoteForObject(objectType, objectId) {
-  try {
-    const noteIds = await getAssociatedIds(objectType, objectId, "notes");
-    if (noteIds.length === 0) return null;
-
-    const allNotes = await batchReadObjects("notes", noteIds, [
-      "hs_note_body",
-      "hs_timestamp",
-      "hubspot_owner_id",
-    ]);
-
-    const edNotes = allNotes.filter((n) =>
+    const edNotes = allSorted.filter((n) =>
       n.properties.hs_note_body?.toLowerCase().includes("ed's note")
     );
 
-    const sorted = sortByCreateDate(edNotes);
-    dbg(`getLastEdNoteForObject(${objectType}, ${objectId}) — Ed notes sorted`, sorted.map((n) => ({
-      id: n.id,
-      createdAt: n.createdAt,
-      bodySnippet: n.properties.hs_note_body?.slice(0, 80),
-    })));
-    dbg(`Picked Ed note`, {
-      id: sorted[0]?.id,
-      createdAt: sorted[0]?.createdAt,
-      bodySnippet: sorted[0]?.properties.hs_note_body?.slice(0, 80),
+    dbg(`Picked last note`, {
+      id: regularNotes[0]?.id,
+      createdAt: regularNotes[0]?.createdAt,
+      bodySnippet: regularNotes[0]?.properties.hs_note_body?.slice(0, 80),
     });
-    return buildNoteObject(sorted[0] ?? null);
+    dbg(`Picked Ed note`, {
+      id: edNotes[0]?.id,
+      createdAt: edNotes[0]?.createdAt,
+      bodySnippet: edNotes[0]?.properties.hs_note_body?.slice(0, 80),
+    });
+
+    const [lastNote, edNote] = await Promise.all([
+      buildNoteObject(regularNotes[0] ?? null),
+      buildNoteObject(edNotes[0] ?? null),
+    ]);
+
+    return { lastNote, edNote };
   } catch (err) {
-    console.error(`[ERROR] getLastEdNoteForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
-    return null;
+    console.error(`[ERROR] getNotesForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
+    return { lastNote: null, edNote: null };
   }
 }
 
@@ -422,7 +400,6 @@ module.exports = {
   getTaskAssociations,
   getContact,
   getCompany,
-  getLastNoteForObject,
-  getLastEdNoteForObject,
+  getNotesForObject,
   getLastEmailForObject,
 };
