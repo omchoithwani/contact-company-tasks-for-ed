@@ -29,19 +29,22 @@ async function batchProcess(items, batchSize, fn) {
 }
 
 async function main() {
-  // Use REPORT_DATE env var if provided (YYYY-MM-DD), otherwise today
-  const baseDate = process.env.REPORT_DATE
-    ? new Date(process.env.REPORT_DATE + "T12:00:00")
-    : new Date();
+  let weekStartZoned, weekEndZoned;
 
-  // Calculate week boundaries in America/New_York (EDT/EST)
-  const zonedNow = toZonedTime(baseDate, TZ);
-  const weekStartZoned = startOfWeek(zonedNow, { weekStartsOn: 1 });
-  const weekEndZoned = endOfWeek(zonedNow, { weekStartsOn: 1 });
+  if (process.env.REPORT_DATE_FROM && process.env.REPORT_DATE_TO) {
+    // Explicit from/to dates provided — use them directly at start/end of day EDT
+    weekStartZoned = toZonedTime(new Date(process.env.REPORT_DATE_FROM + "T00:00:00"), TZ);
+    weekEndZoned   = toZonedTime(new Date(process.env.REPORT_DATE_TO   + "T23:59:59"), TZ);
+  } else {
+    // Default: current week (Mon–Sun) in EDT
+    const zonedNow = toZonedTime(new Date(), TZ);
+    weekStartZoned = startOfWeek(zonedNow, { weekStartsOn: 1 });
+    weekEndZoned   = endOfWeek(zonedNow,   { weekStartsOn: 1 });
+  }
 
-  // Convert back to UTC for HubSpot API timestamps
+  // Convert to UTC for HubSpot API timestamps
   const weekStart = fromZonedTime(weekStartZoned, TZ);
-  const weekEnd = fromZonedTime(weekEndZoned, TZ);
+  const weekEnd   = fromZonedTime(weekEndZoned,   TZ);
 
   console.log(
     `Fetching tasks due ${weekStartZoned.toDateString()} – ${weekEndZoned.toDateString()} (EDT)...`

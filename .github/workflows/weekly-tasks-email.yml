@@ -6,8 +6,12 @@ on:
     - cron: "30 20 * * 5"
   workflow_dispatch:
     inputs:
-      report_date:
-        description: "Report date (YYYY-MM-DD). Leave blank to use today."
+      report_date_from:
+        description: "Report start date (YYYY-MM-DD). Leave blank for current week."
+        required: false
+        type: string
+      report_date_to:
+        description: "Report end date (YYYY-MM-DD). Leave blank for current week."
         required: false
         type: string
 
@@ -34,5 +38,6 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          REPORT_DATE: ${{ github.event.inputs.report_date }}
+          REPORT_DATE_FROM: ${{ github.event.inputs.report_date_from }}
+          REPORT_DATE_TO: ${{ github.event.inputs.report_date_to }}
         run: node src/index.js
