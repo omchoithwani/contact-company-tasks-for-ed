@@ -13,6 +13,23 @@ function dbg(label, data) {
 // Cache owner names to avoid repeated API calls within a single run
 const ownerCache = new Map();
 
+/**
+ * Build the hubspot_owner_id filter from the HUBSPOT_OWNER_IDS env var.
+ * Supports one or many comma-separated IDs.
+ */
+function ownerFilter() {
+  const ids = (process.env.HUBSPOT_OWNER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (ids.length === 0) return [];
+  if (ids.length === 1) {
+    return [{ propertyName: "hubspot_owner_id", operator: "EQ", value: ids[0] }];
+  }
+  return [{ propertyName: "hubspot_owner_id", operator: "IN", values: ids }];
+}
+
 function getClient() {
   return axios.create({
     baseURL: BASE_URL,
@@ -53,11 +70,7 @@ async function getTasksDueThisWeek(weekStart, weekEnd) {
               operator: "LTE",
               value: String(weekEnd),
             },
-            {
-              propertyName: "hubspot_owner_id",
-              operator: "EQ",
-              value: "1517615118",
-            },
+            ...ownerFilter(),
           ],
         },
       ],

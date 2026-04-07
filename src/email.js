@@ -1,13 +1,16 @@
 const { Resend } = require("resend");
 const { format } = require("date-fns");
+const { formatInTimeZone } = require("date-fns-tz");
+
+const TZ = "America/New_York";
 
 /**
- * Format an ISO timestamp as a readable date string, e.g. "Mar 31, 2026 at 2:45 PM".
+ * Format an ISO timestamp in EDT/EST, e.g. "Mar 31, 2026 at 2:45 PM EDT".
  */
 function formatDate(timestamp) {
   if (!timestamp) return "";
   try {
-    return format(new Date(timestamp), "MMM d, yyyy 'at' h:mm a");
+    return formatInTimeZone(new Date(timestamp), TZ, "MMM d, yyyy 'at' h:mm a zzz");
   } catch {
     return "";
   }

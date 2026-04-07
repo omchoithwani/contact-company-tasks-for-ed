@@ -2,9 +2,14 @@ name: Weekly Contact/Company Tasks Email
 
 on:
   schedule:
-    # Every Friday at 4:30 PM EST (21:30 UTC)
-    - cron: "30 21 * * 5"
-  workflow_dispatch: # allows manual trigger from GitHub UI
+    # Every Friday at 4:30 PM EDT (20:30 UTC)
+    - cron: "30 20 * * 5"
+  workflow_dispatch:
+    inputs:
+      report_date:
+        description: "Report date (YYYY-MM-DD). Leave blank to use today."
+        required: false
+        type: string
 
 jobs:
   send-email:
@@ -25,7 +30,9 @@ jobs:
       - name: Send weekly tasks email
         env:
           HUBSPOT_ACCESS_TOKEN: ${{ secrets.HUBSPOT_ACCESS_TOKEN }}
+          HUBSPOT_OWNER_IDS: ${{ secrets.HUBSPOT_OWNER_IDS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          REPORT_DATE: ${{ github.event.inputs.report_date }}
         run: node src/index.js

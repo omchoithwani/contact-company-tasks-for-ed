@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const { startOfWeek, endOfWeek } = require("date-fns");
+const { toZonedTime, fromZonedTime } = require("date-fns-tz");
 
 const {
   getTasksDueThisWeek,
@@ -14,6 +15,8 @@ const {
 
 const { formatEmail, sendEmail } = require("./email");
 
+const TZ = "America/New_York";
+
 // Process tasks in batches to avoid HubSpot rate limits (10 req/s on free tier)
 async function batchProcess(items, batchSize, fn) {
   const results = [];
@@ -26,13 +29,22 @@ async function batchProcess(items, batchSize, fn) {
 }
 
 async function main() {
-  const now = new Date();
-  // Week starts on Monday (weekStartsOn: 1)
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  // Use REPORT_DATE env var if provided (YYYY-MM-DD), otherwise today
+  const baseDate = process.env.REPORT_DATE
+    ? new Date(process.env.REPORT_DATE + "T12:00:00")
+    : new Date();
+
+  // Calculate week boundaries in America/New_York (EDT/EST)
+  const zonedNow = toZonedTime(baseDate, TZ);
+  const weekStartZoned = startOfWeek(zonedNow, { weekStartsOn: 1 });
+  const weekEndZoned = endOfWeek(zonedNow, { weekStartsOn: 1 });
+
+  // Convert back to UTC for HubSpot API timestamps
+  const weekStart = fromZonedTime(weekStartZoned, TZ);
+  const weekEnd = fromZonedTime(weekEndZoned, TZ);
 
   console.log(
-    `Fetching tasks due ${weekStart.toDateString()} – ${weekEnd.toDateString()}...`
+    `Fetching tasks due ${weekStartZoned.toDateString()} – ${weekEndZoned.toDateString()} (EDT)...`
   );
 
   // 1. Fetch all pending tasks due this week
@@ -76,8 +88,7 @@ async function main() {
       companyId ? getCompany(companyId) : Promise.resolve(null),
     ]);
 
-    // Determine the best object to pull notes from.
-    // Prefer contact; fall back to company.
+    // Prefer contact for notes/emails; fall back to company
     let noteObjectType = null;
     let noteObjectId = null;
 
@@ -102,15 +113,9 @@ async function main() {
 
       // If contact had no results, fall back to company
       if (noteObjectType === "contacts" && companyId) {
-        if (!lastNote) {
-          lastNote = await getLastNoteForObject("companies", companyId);
-        }
-        if (!edNote) {
-          edNote = await getLastEdNoteForObject("companies", companyId);
-        }
-        if (!lastEmail) {
-          lastEmail = await getLastEmailForObject("companies", companyId);
-        }
+        if (!lastNote) lastNote = await getLastNoteForObject("companies", companyId);
+        if (!edNote) edNote = await getLastEdNoteForObject("companies", companyId);
+        if (!lastEmail) lastEmail = await getLastEmailForObject("companies", companyId);
       }
     }
 
@@ -129,8 +134,8 @@ async function main() {
 
   console.log(`Enriched ${enriched.length} tasks. Formatting email...`);
 
-  // 5. Format and send email
-  const { subject, html, text } = formatEmail(enriched, weekStart, weekEnd);
+  // 5. Format and send email — pass zoned dates so email header shows EDT
+  const { subject, html, text } = formatEmail(enriched, weekStartZoned, weekEndZoned);
 
   console.log(`Sending email: "${subject}"`);
   const result = await sendEmail(subject, html, text);
