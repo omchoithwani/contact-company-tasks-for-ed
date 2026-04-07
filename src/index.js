@@ -42,9 +42,11 @@ async function main() {
   let weekStartZoned, weekEndZoned;
 
   if (process.env.REPORT_DATE_FROM && process.env.REPORT_DATE_TO) {
-    // Explicit from/to dates provided — use them directly at start/end of day EDT
-    weekStartZoned = toZonedTime(new Date(process.env.REPORT_DATE_FROM + "T00:00:00"), TZ);
-    weekEndZoned   = toZonedTime(new Date(process.env.REPORT_DATE_TO   + "T23:59:59"), TZ);
+    // Parse the date strings as Eastern time (not UTC) then convert to zoned display dates.
+    // fromZonedTime("2026-03-01T00:00:00", TZ) treats the string as ET midnight → UTC instant.
+    // toZonedTime then converts that UTC instant back to a zoned Date for correct display.
+    weekStartZoned = toZonedTime(fromZonedTime(process.env.REPORT_DATE_FROM + "T00:00:00", TZ), TZ);
+    weekEndZoned   = toZonedTime(fromZonedTime(process.env.REPORT_DATE_TO   + "T23:59:59", TZ), TZ);
   } else {
     // Default: current week (Mon–Sun) in EDT
     const zonedNow = toZonedTime(new Date(), TZ);
