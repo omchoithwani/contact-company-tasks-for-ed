@@ -69,9 +69,10 @@ async function main() {
   console.log(`Found ${rawTasks.length} raw tasks. Fetching associations...`);
 
   // 2. Fetch associations for every task (batched)
+  // Each getTaskAssociations fires 3 concurrent requests; batch of 5 = 15 concurrent max.
   const tasksWithAssociations = await batchProcess(
     rawTasks,
-    10,
+    5,
     async (task) => {
       const associations = await getTaskAssociations(task.id);
       return { task, associations };
@@ -90,74 +91,72 @@ async function main() {
     `${qualifying.length} tasks qualify (contact/company, no deal). Enriching...`
   );
 
-  // 4. Enrich each qualifying task with contact, company, and notes (batched)
-  // Batch size 3 + 1s delay between batches keeps us well under HubSpot's
-  // ten_secondly_rolling limit (each task makes ~5 API calls sequentially).
-  const enriched = await batchProcess(qualifying, 3, async ({ task, associations }) => {
-    const contactId = associations.contacts[0] ?? null;
-    const companyId = associations.companies[0] ?? null;
+  // 4. Enrich each qualifying task one at a time to avoid HubSpot rate limits.
+  // All API calls within each task are sequential — no concurrent bursting.
+  const enriched = [];
+  for (const { task, associations } of qualifying) {
+    try {
+      const contactId = associations.contacts[0] ?? null;
+      const companyId = associations.companies[0] ?? null;
 
-    console.log(`[TASK ${task.id}] "${task.properties.hs_task_subject}" — contactId=${contactId} companyId=${companyId}`);
+      console.log(`[TASK ${task.id}] "${task.properties.hs_task_subject}" — contactId=${contactId} companyId=${companyId}`);
 
-    // Fetch contact and company in parallel
-    const [contact, company] = await Promise.all([
-      contactId ? getContact(contactId) : Promise.resolve(null),
-      companyId ? getCompany(companyId) : Promise.resolve(null),
-    ]);
+      const contact = contactId ? await getContact(contactId) : null;
+      const company = companyId ? await getCompany(companyId) : null;
 
-    console.log(`[TASK ${task.id}] contact="${contact?.name}" company="${company?.name}"`);
+      console.log(`[TASK ${task.id}] contact="${contact?.name}" company="${company?.name}"`);
 
-    // Prefer contact for notes/emails; fall back to company
-    let noteObjectType = null;
-    let noteObjectId = null;
+      // Prefer contact for notes/emails; fall back to company
+      let noteObjectType = null;
+      let noteObjectId = null;
 
-    if (contactId) {
-      noteObjectType = "contacts";
-      noteObjectId = contactId;
-    } else if (companyId) {
-      noteObjectType = "companies";
-      noteObjectId = companyId;
-    }
-
-    let lastNote = null;
-    let edNote = null;
-    let lastEmail = null;
-
-    if (noteObjectType && noteObjectId) {
-      // getNotesForObject fetches note IDs only ONCE and derives both lastNote + edNote
-      const [notes, email] = await Promise.all([
-        getNotesForObject(noteObjectType, noteObjectId),
-        getLastEmailForObject(noteObjectType, noteObjectId),
-      ]);
-      lastNote = notes.lastNote;
-      edNote = notes.edNote;
-      lastEmail = email;
-
-      // If contact had no results, fall back to company
-      if (noteObjectType === "contacts" && companyId) {
-        if (!lastNote || !edNote) {
-          const companyNotes = await getNotesForObject("companies", companyId);
-          if (!lastNote) lastNote = companyNotes.lastNote;
-          if (!edNote) edNote = companyNotes.edNote;
-        }
-        if (!lastEmail) lastEmail = await getLastEmailForObject("companies", companyId);
+      if (contactId) {
+        noteObjectType = "contacts";
+        noteObjectId = contactId;
+      } else if (companyId) {
+        noteObjectType = "companies";
+        noteObjectId = companyId;
       }
+
+      let lastNote = null;
+      let edNote = null;
+      let lastEmail = null;
+
+      if (noteObjectType && noteObjectId) {
+        // getNotesForObject fetches note IDs only ONCE and derives both lastNote + edNote
+        const notes = await getNotesForObject(noteObjectType, noteObjectId);
+        lastNote = notes.lastNote;
+        edNote = notes.edNote;
+        lastEmail = await getLastEmailForObject(noteObjectType, noteObjectId);
+
+        // If contact had no results, fall back to company
+        if (noteObjectType === "contacts" && companyId) {
+          if (!lastNote || !edNote) {
+            const companyNotes = await getNotesForObject("companies", companyId);
+            if (!lastNote) lastNote = companyNotes.lastNote;
+            if (!edNote) edNote = companyNotes.edNote;
+          }
+          if (!lastEmail) lastEmail = await getLastEmailForObject("companies", companyId);
+        }
+      }
+
+      console.log(`[TASK ${task.id}] lastNote=${!!lastNote} edNote=${!!edNote} lastEmail=${!!lastEmail}`);
+
+      enriched.push({
+        id: task.id,
+        subject: task.properties.hs_task_subject,
+        status: task.properties.hs_task_status,
+        dueDate: task.properties.hs_timestamp,
+        contact,
+        company,
+        lastNote,
+        edNote,
+        lastEmail,
+      });
+    } catch (err) {
+      console.error(`[ERROR] Failed to enrich task ${task.id}:`, err.message ?? err);
     }
-
-    console.log(`[TASK ${task.id}] lastNote=${!!lastNote} edNote=${!!edNote} lastEmail=${!!lastEmail}`);
-
-    return {
-      id: task.id,
-      subject: task.properties.hs_task_subject,
-      status: task.properties.hs_task_status,
-      dueDate: task.properties.hs_timestamp,
-      contact,
-      company,
-      lastNote,
-      edNote,
-      lastEmail,
-    };
-  }, 1000);
+  }
 
   console.log(`Enriched ${enriched.length} tasks. Formatting email...`);
 
