@@ -17,13 +17,20 @@ const { formatEmail, sendEmail } = require("./email");
 
 const TZ = "America/New_York";
 
-// Process tasks in batches to avoid HubSpot rate limits (10 req/s on free tier)
+// Process tasks in batches to avoid HubSpot rate limits (10 req/s on free tier).
+// Uses Promise.allSettled so one failing item doesn't abort the whole batch.
 async function batchProcess(items, batchSize, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.all(batch.map(fn));
-    results.push(...batchResults);
+    const settled = await Promise.allSettled(batch.map(fn));
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled") {
+        results.push(outcome.value);
+      } else {
+        console.error("[ERROR] batchProcess item failed:", outcome.reason?.message ?? outcome.reason);
+      }
+    }
   }
   return results;
 }
@@ -85,11 +92,15 @@ async function main() {
     const contactId = associations.contacts[0] ?? null;
     const companyId = associations.companies[0] ?? null;
 
+    console.log(`[TASK ${task.id}] "${task.properties.hs_task_subject}" — contactId=${contactId} companyId=${companyId}`);
+
     // Fetch contact and company in parallel
     const [contact, company] = await Promise.all([
       contactId ? getContact(contactId) : Promise.resolve(null),
       companyId ? getCompany(companyId) : Promise.resolve(null),
     ]);
+
+    console.log(`[TASK ${task.id}] contact="${contact?.name}" company="${company?.name}"`);
 
     // Prefer contact for notes/emails; fall back to company
     let noteObjectType = null;
@@ -121,6 +132,8 @@ async function main() {
         if (!lastEmail) lastEmail = await getLastEmailForObject("companies", companyId);
       }
     }
+
+    console.log(`[TASK ${task.id}] lastNote=${!!lastNote} edNote=${!!edNote} lastEmail=${!!lastEmail}`);
 
     return {
       id: task.id,

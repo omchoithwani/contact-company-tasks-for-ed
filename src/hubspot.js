@@ -127,7 +127,8 @@ async function getContact(contactId) {
     const { firstname = "", lastname = "" } = data.properties;
     const name = [firstname, lastname].filter(Boolean).join(" ") || "(unknown)";
     return { id: contactId, name };
-  } catch {
+  } catch (err) {
+    console.error(`[ERROR] getContact(${contactId}):`, err.response?.data ?? err.message);
     return { id: contactId, name: "(unknown)" };
   }
 }
@@ -143,7 +144,8 @@ async function getCompany(companyId) {
       `/crm/v3/objects/companies/${companyId}?properties=name`
     );
     return { id: companyId, name: data.properties.name || "(unknown)" };
-  } catch {
+  } catch (err) {
+    console.error(`[ERROR] getCompany(${companyId}):`, err.response?.data ?? err.message);
     return { id: companyId, name: "(unknown)" };
   }
 }
@@ -178,15 +180,22 @@ async function getAssociatedIds(fromObjectType, fromObjectId, toObjectType) {
   const ids = [];
   let after = undefined;
 
-  do {
-    const params = { limit: 500, ...(after ? { after } : {}) };
-    const { data } = await client.get(
-      `/crm/v4/objects/${fromObjectType}/${fromObjectId}/associations/${toObjectType}`,
-      { params }
+  try {
+    do {
+      const params = { limit: 500, ...(after ? { after } : {}) };
+      const { data } = await client.get(
+        `/crm/v4/objects/${fromObjectType}/${fromObjectId}/associations/${toObjectType}`,
+        { params }
+      );
+      (data.results || []).forEach((r) => ids.push(r.toObjectId));
+      after = data.paging?.next?.after;
+    } while (after);
+  } catch (err) {
+    console.error(
+      `[ERROR] getAssociatedIds(${fromObjectType}, ${fromObjectId}, ${toObjectType}):`,
+      err.response?.data ?? err.message
     );
-    (data.results || []).forEach((r) => ids.push(r.toObjectId));
-    after = data.paging?.next?.after;
-  } while (after);
+  }
 
   return ids;
 }
@@ -310,7 +319,7 @@ async function getLastNoteForObject(objectType, objectId) {
     });
     return buildNoteObject(filtered[0] ?? null);
   } catch (err) {
-    dbg(`getLastNoteForObject error`, { message: err.message });
+    console.error(`[ERROR] getLastNoteForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
     return null;
   }
 }
@@ -347,7 +356,7 @@ async function getLastEdNoteForObject(objectType, objectId) {
     });
     return buildNoteObject(sorted[0] ?? null);
   } catch (err) {
-    dbg(`getLastEdNoteForObject error`, { message: err.message });
+    console.error(`[ERROR] getLastEdNoteForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
     return null;
   }
 }
@@ -403,7 +412,7 @@ async function getLastEmailForObject(objectType, objectId) {
       direction: p.hs_email_direction || null,
     };
   } catch (err) {
-    dbg(`getLastEmailForObject error`, { message: err.message });
+    console.error(`[ERROR] getLastEmailForObject(${objectType}, ${objectId}):`, err.response?.data ?? err.message);
     return null;
   }
 }
