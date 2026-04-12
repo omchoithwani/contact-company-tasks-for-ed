@@ -400,6 +400,7 @@ module.exports = {
   getTaskAssociations,
   getContact,
   getCompany,
+  getAssociatedIds,
   getNotesForObject,
   getLastEmailForObject,
 };

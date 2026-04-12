@@ -8,6 +8,7 @@ const {
   getTaskAssociations,
   getContact,
   getCompany,
+  getAssociatedIds,
   getNotesForObject,
   getLastEmailForObject,
 } = require("./hubspot");
@@ -99,7 +100,14 @@ async function main() {
   for (const { task, associations } of qualifying) {
     try {
       const contactId = associations.contacts[0] ?? null;
-      const companyId = associations.companies[0] ?? null;
+      let companyId = associations.companies[0] ?? null;
+
+      // If the task has no direct company association, look up the contact's company.
+      // Tasks are often linked only to a contact, not the company directly.
+      if (!companyId && contactId) {
+        const contactCompanyIds = await getAssociatedIds("contacts", contactId, "companies");
+        companyId = contactCompanyIds[0] ?? null;
+      }
 
       console.log(`[TASK ${task.id}] "${task.properties.hs_task_subject}" — contactId=${contactId} companyId=${companyId}`);
 
