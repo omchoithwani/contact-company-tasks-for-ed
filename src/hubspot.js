@@ -9,6 +9,30 @@ function dbg(label, data) {
   console.log(JSON.stringify(data, null, 2));
 }
 
+/**
+ * Wrap an async API call with automatic retry on HubSpot rate limit errors.
+ * Retries up to 5 times with exponential backoff starting at 2 seconds.
+ */
+async function withRetry(fn, label = "API call") {
+  const delays = [2000, 4000, 8000, 16000, 32000];
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRateLimit =
+        err.response?.status === 429 ||
+        err.response?.data?.errorType === "RATE_LIMIT";
+      if (isRateLimit && attempt < delays.length) {
+        const wait = delays[attempt];
+        console.warn(`[RATE_LIMIT] ${label} — retrying in ${wait}ms (attempt ${attempt + 1})`);
+        await new Promise((r) => setTimeout(r, wait));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 
 // Cache owner names to avoid repeated API calls within a single run
 const ownerCache = new Map();
@@ -79,7 +103,10 @@ async function getTasksDueThisWeek(weekStart, weekEnd) {
       ...(after ? { after } : {}),
     };
 
-    const { data } = await client.post("/crm/v3/objects/tasks/search", body);
+    const { data } = await withRetry(
+      () => client.post("/crm/v3/objects/tasks/search", body),
+      "tasks/search"
+    );
     tasks.push(...data.results);
     after = data.paging?.next?.after;
   } while (after);
@@ -95,9 +122,9 @@ async function getTaskAssociations(taskId) {
   const client = getClient();
 
   const [contactsRes, companiesRes, dealsRes] = await Promise.allSettled([
-    client.get(`/crm/v4/objects/tasks/${taskId}/associations/contacts`),
-    client.get(`/crm/v4/objects/tasks/${taskId}/associations/companies`),
-    client.get(`/crm/v4/objects/tasks/${taskId}/associations/deals`),
+    withRetry(() => client.get(`/crm/v4/objects/tasks/${taskId}/associations/contacts`), `task ${taskId} contacts`),
+    withRetry(() => client.get(`/crm/v4/objects/tasks/${taskId}/associations/companies`), `task ${taskId} companies`),
+    withRetry(() => client.get(`/crm/v4/objects/tasks/${taskId}/associations/deals`), `task ${taskId} deals`),
   ]);
 
   const extractIds = (res) => {
@@ -121,8 +148,9 @@ async function getTaskAssociations(taskId) {
 async function getContact(contactId) {
   const client = getClient();
   try {
-    const { data } = await client.get(
-      `/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`
+    const { data } = await withRetry(
+      () => client.get(`/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`),
+      `getContact(${contactId})`
     );
     const { firstname = "", lastname = "" } = data.properties;
     const name = [firstname, lastname].filter(Boolean).join(" ") || "(unknown)";
@@ -140,8 +168,9 @@ async function getContact(contactId) {
 async function getCompany(companyId) {
   const client = getClient();
   try {
-    const { data } = await client.get(
-      `/crm/v3/objects/companies/${companyId}?properties=name`
+    const { data } = await withRetry(
+      () => client.get(`/crm/v3/objects/companies/${companyId}?properties=name`),
+      `getCompany(${companyId})`
     );
     return { id: companyId, name: data.properties.name || "(unknown)" };
   } catch (err) {
@@ -160,7 +189,10 @@ async function getOwnerName(ownerId) {
 
   const client = getClient();
   try {
-    const { data } = await client.get(`/crm/v3/owners/${ownerId}`);
+    const { data } = await withRetry(
+      () => client.get(`/crm/v3/owners/${ownerId}`),
+      `getOwnerName(${ownerId})`
+    );
     const name =
       [data.firstName, data.lastName].filter(Boolean).join(" ") || null;
     ownerCache.set(ownerId, name);
@@ -183,9 +215,12 @@ async function getAssociatedIds(fromObjectType, fromObjectId, toObjectType) {
   try {
     do {
       const params = { limit: 500, ...(after ? { after } : {}) };
-      const { data } = await client.get(
-        `/crm/v4/objects/${fromObjectType}/${fromObjectId}/associations/${toObjectType}`,
-        { params }
+      const { data } = await withRetry(
+        () => client.get(
+          `/crm/v4/objects/${fromObjectType}/${fromObjectId}/associations/${toObjectType}`,
+          { params }
+        ),
+        `getAssociatedIds(${fromObjectType}, ${fromObjectId}, ${toObjectType})`
       );
       (data.results || []).forEach((r) => ids.push(r.toObjectId));
       after = data.paging?.next?.after;
@@ -211,12 +246,12 @@ async function batchReadObjects(objectType, ids, properties) {
 
   for (let i = 0; i < ids.length; i += 100) {
     const chunk = ids.slice(i, i + 100);
-    const { data } = await client.post(
-      `/crm/v3/objects/${objectType}/batch/read`,
-      {
+    const { data } = await withRetry(
+      () => client.post(`/crm/v3/objects/${objectType}/batch/read`, {
         inputs: chunk.map((id) => ({ id: String(id) })),
         properties,
-      }
+      }),
+      `batchRead(${objectType})`
     );
     results.push(...(data.results || []));
   }
