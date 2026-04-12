@@ -72,10 +72,10 @@ async function main() {
   console.log(`Found ${rawTasks.length} raw tasks. Fetching associations...`);
 
   // 2. Fetch associations for every task (batched)
-  // Each getTaskAssociations fires 3 concurrent requests; batch of 5 = 15 concurrent max.
+  // Each getTaskAssociations fires 3 concurrent requests; batch of 3 = 9 concurrent max.
   const tasksWithAssociations = await batchProcess(
     rawTasks,
-    5,
+    3,
     async (task) => {
       const associations = await getTaskAssociations(task.id);
       return { task, associations };
@@ -97,7 +97,11 @@ async function main() {
   // 4. Enrich each qualifying task one at a time to avoid HubSpot rate limits.
   // All API calls within each task are sequential — no concurrent bursting.
   const enriched = [];
-  for (const { task, associations } of qualifying) {
+  for (let i = 0; i < qualifying.length; i++) {
+    const { task, associations } = qualifying[i];
+    // Pause between tasks to stay under HubSpot's ten_secondly_rolling limit.
+    // Each task makes ~7-8 sequential API calls; 500ms spacing keeps us safe.
+    if (i > 0) await new Promise((r) => setTimeout(r, 500));
     try {
       const contactId = associations.contacts[0] ?? null;
       let companyId = associations.companies[0] ?? null;
