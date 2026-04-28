@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const { startOfWeek, endOfWeek } = require("date-fns");
+const { startOfWeek, endOfWeek, addWeeks } = require("date-fns");
 const { toZonedTime, fromZonedTime } = require("date-fns-tz");
 
 const {
@@ -49,10 +49,11 @@ async function main() {
     weekStartZoned = toZonedTime(fromZonedTime(process.env.REPORT_DATE_FROM + "T00:00:00", TZ), TZ);
     weekEndZoned   = toZonedTime(fromZonedTime(process.env.REPORT_DATE_TO   + "T23:59:59", TZ), TZ);
   } else {
-    // Default: current week (Mon–Sun) in EDT
+    // Default: next week (Mon–Sun) in EDT
     const zonedNow = toZonedTime(new Date(), TZ);
-    weekStartZoned = startOfWeek(zonedNow, { weekStartsOn: 1 });
-    weekEndZoned   = endOfWeek(zonedNow,   { weekStartsOn: 1 });
+    const nextWeek = addWeeks(zonedNow, 1);
+    weekStartZoned = startOfWeek(nextWeek, { weekStartsOn: 1 });
+    weekEndZoned   = endOfWeek(nextWeek,   { weekStartsOn: 1 });
   }
 
   // Convert to UTC for HubSpot API timestamps
