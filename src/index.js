@@ -57,8 +57,11 @@ async function main() {
   }
 
   // Convert to UTC for HubSpot API timestamps
+  // Start: Monday 00:00:00 UTC exactly (user requirement)
   const weekStart = fromZonedTime(weekStartZoned, TZ);
-  const weekEnd   = fromZonedTime(weekEndZoned,   TZ);
+  weekStart.setUTCHours(0, 0, 0, 0);
+  // End: Sunday 23:59:59 EDT → converted to UTC
+  const weekEnd = fromZonedTime(weekEndZoned, TZ);
 
   console.log(
     `Fetching tasks due ${weekStartZoned.toDateString()} – ${weekEndZoned.toDateString()} (EDT)...`
