@@ -56,12 +56,13 @@ async function main() {
     weekEndZoned   = endOfWeek(nextWeek,   { weekStartsOn: 1 });
   }
 
-  // Convert to UTC for HubSpot API timestamps.
-  // Both boundaries are EDT-based so the window is exactly Mon 00:00 EDT → Sun 23:59:59 EDT.
-  // (Mon 00:00 EDT = Mon 04:00 UTC; Sun 23:59:59 EDT = Mon 03:59:59 UTC)
-  // Tasks stored by HubSpot at Monday EDT midnight (04:00 UTC) are correctly excluded.
+  // HubSpot stores task due dates at midnight UTC of the due date.
+  // Use a clean UTC week: Monday 00:00:00 UTC → Sunday 23:59:59.999 UTC.
+  // This ensures "due June 15" (June 15 00:00 UTC) is included and
+  // "due June 22" (June 22 00:00 UTC) is excluded from the June 15–21 window.
   const weekStart = fromZonedTime(weekStartZoned, TZ);
-  const weekEnd   = fromZonedTime(weekEndZoned,   TZ);
+  weekStart.setUTCHours(0, 0, 0, 0);                        // Monday 00:00:00 UTC
+  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000 - 1); // Sunday 23:59:59.999 UTC
 
   console.log(
     `Fetching tasks due ${weekStartZoned.toDateString()} – ${weekEndZoned.toDateString()} (EDT)...`
