@@ -17,6 +17,27 @@ function formatDate(timestamp) {
 }
 
 /**
+ * Format just the date portion in EDT/EST, e.g. "Mon, Jun 15, 2026".
+ */
+function formatDateOnly(timestamp) {
+  if (!timestamp) return "";
+  try {
+    return formatInTimeZone(new Date(timestamp), TZ, "EEE, MMM d, yyyy");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Build the HubSpot task URL from the task ID.
+ */
+function taskUrl(taskId) {
+  const portalId = process.env.HUBSPOT_PORTAL_ID;
+  if (!portalId || !taskId) return null;
+  return `https://app.hubspot.com/tasks/${portalId}/view/all/task/${taskId}`;
+}
+
+/**
  * Render a labelled field block: bold label on its own line, value below.
  * Safe for all screen widths.
  */
@@ -81,6 +102,11 @@ function formatEmail(tasks, weekStart, weekEnd) {
     const contactName = task.contact?.name || "(none)";
     const companyName = task.company?.name || "(none)";
     const taskName = task.subject || "(no subject)";
+    const dueDate = formatDateOnly(task.dueDate);
+    const url = taskUrl(task.id);
+    const taskNameHtml = url
+      ? `<a href="${url}" style="color:#1a73e8; text-decoration:none;">${escapeHtml(taskName)}</a>`
+      : escapeHtml(taskName);
 
     // Last logged email fields
     const email = task.lastEmail;
@@ -104,7 +130,8 @@ function formatEmail(tasks, weekStart, weekEnd) {
       `Task ${num}`,
       `Contact Name: ${contactName}`,
       `Company Name: ${companyName}`,
-      `Task Name: ${taskName}`,
+      `Task Name: ${taskName}${url ? ` (${url})` : ""}`,
+      `Due Date: ${dueDate || "(none)"}`,
       `Last Logged Note: ${noteText(task.lastNote, "(no note)")}`,
       `Ed's Note: ${noteText(task.edNote, "(none)")}`,
       `Last Logged Email`,
@@ -121,7 +148,8 @@ function formatEmail(tasks, weekStart, weekEnd) {
         <div style="font-weight:bold; font-size:15px; margin-bottom:12px; color:#111;">Task ${num}</div>
         ${field("Contact Name", escapeHtml(contactName))}
         ${field("Company Name", escapeHtml(companyName))}
-        ${field("Task Name", escapeHtml(taskName))}
+        ${field("Task Name", taskNameHtml)}
+        ${field("Due Date", escapeHtml(dueDate || "(none)"))}
         ${field("Last Logged Note", noteHtml(task.lastNote, "(no note)"))}
         ${field("Ed's Note", noteHtml(task.edNote, "(none)"))}
         ${field("Last Logged Email", emailValueHtml)}
