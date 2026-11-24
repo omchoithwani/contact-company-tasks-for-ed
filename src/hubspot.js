@@ -142,22 +142,23 @@ async function getTaskAssociations(taskId) {
 }
 
 /**
- * Fetch a contact's firstname and lastname.
- * Returns { id, name } or null.
+ * Fetch a contact's firstname, lastname, and owner.
+ * Returns { id, name, ownerName } or null.
  */
 async function getContact(contactId) {
   const client = getClient();
   try {
     const { data } = await withRetry(
-      () => client.get(`/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`),
+      () => client.get(`/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname,hubspot_owner_id`),
       `getContact(${contactId})`
     );
-    const { firstname = "", lastname = "" } = data.properties;
+    const { firstname = "", lastname = "", hubspot_owner_id } = data.properties;
     const name = [firstname, lastname].filter(Boolean).join(" ") || "(unknown)";
-    return { id: contactId, name };
+    const ownerName = await getOwnerName(hubspot_owner_id);
+    return { id: contactId, name, ownerName };
   } catch (err) {
     console.error(`[ERROR] getContact(${contactId}):`, err.response?.data ?? err.message);
-    return { id: contactId, name: "(unknown)" };
+    return { id: contactId, name: "(unknown)", ownerName: null };
   }
 }
 

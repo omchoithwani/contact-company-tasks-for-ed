@@ -125,10 +125,13 @@ function formatEmail(tasks, weekStart, weekEnd) {
       `<span style="font-size:12px; color:#999;">${escapeHtml(emailSender)} &nbsp;·&nbsp; ${escapeHtml(emailDate)}</span><br>` +
       `<span style="white-space:pre-wrap; font-size:13px;">${escapeHtml(emailBody)}</span>`;
 
+    const contactOwner = task.contact?.ownerName || "(none)";
+
     // Plain text
     lines.push(
       `Task ${num}`,
       `Contact Name: ${contactName}`,
+      `Contact Owner: ${contactOwner}`,
       `Company Name: ${companyName}`,
       `Task Name: ${taskName}${url ? ` (${url})` : ""}`,
       `Due Date: ${dueDate || "(none)"}`,
@@ -147,6 +150,7 @@ function formatEmail(tasks, weekStart, weekEnd) {
       <div style="margin-bottom:20px; padding:14px 16px; border:1px solid #e0e0e0; border-radius:8px; font-family:Arial,sans-serif; box-sizing:border-box; width:100%;">
         <div style="font-weight:bold; font-size:15px; margin-bottom:12px; color:#111;">Task ${num}</div>
         ${field("Contact Name", escapeHtml(contactName))}
+        ${field("Contact Owner", escapeHtml(contactOwner))}
         ${field("Company Name", escapeHtml(companyName))}
         ${field("Task Name", taskNameHtml)}
         ${field("Due Date", escapeHtml(dueDate || "(none)"))}
