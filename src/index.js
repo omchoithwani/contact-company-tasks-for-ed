@@ -14,7 +14,6 @@ const {
 } = require("./hubspot");
 
 const { formatEmail, sendEmail } = require("./email");
-const { writeToSheet } = require("./sheets");
 
 const TZ = "America/New_York";
 
@@ -186,9 +185,6 @@ async function main() {
   console.log(`Sending email: "${subject}"`);
   const result = await sendEmail(subject, html, text);
   console.log("Email sent successfully:", result);
-
-  // 6. Write to Google Sheet (via Apps Script web app)
-  await writeToSheet(enriched, weekStartZoned, weekEndZoned);
 }
 
 main().catch((err) => {
